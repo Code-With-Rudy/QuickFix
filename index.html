@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quick Fix by Rudy</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(90deg, #00ff26 0%, #5201ff 100%);
+        }
+        .editor-container {
+            backdrop-filter: blur(10px);
+            background-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 15px 25px rgba(0,0,0,0.1);
+        }
+        .preview-container {
+            background: rgba(255,255,255,0.2);
+            border-radius: 15px;
+        }
+        .tool-btn {
+            transition: all 0.3s ease;
+        }
+        .tool-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #cropOverlay {
+            position: absolute;
+            border: 2px dashed rgba(255,255,255,0.7);
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="editor-container w-full max-w-5xl rounded-2xl p-6 text-white">
+        <h1 class="text-3xl font-bold mb-6 text-center">Quick Fix</h1>
+        
+        <div class="flex flex-col md:flex-row gap-6">
+
+            <div class="w-full md:w-1/3 bg-white bg-opacity-10 rounded-xl p-4">
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-4">Filters</h3>
+                    <div class="grid grid-cols-2 gap-2" id="filterButtons">
+                        <button class="tool-btn filter-btn active" data-filter="brightness">Brightness</button>
+                        <button class="tool-btn filter-btn" data-filter="saturation">Saturation</button>
+                        <button class="tool-btn filter-btn" data-filter="inversion">Inversion</button>
+                        <button class="tool-btn filter-btn" data-filter="grayscale">Grayscale</button>
+                        <button class="tool-btn filter-btn" data-filter="contrast">Contrast</button>
+                        <button class="tool-btn filter-btn" data-filter="sepia">Sepia</button>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xl font-semibold mb-4">Adjustments</h3>
+                    <div class="flex flex-col gap-4">
+                        <div>
+                            <label class="block mb-2" id="filterName">Brightness</label>
+                            <input type="range" id="filterSlider" min="0" max="200" value="100" 
+                                   class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer">
+                            <span id="filterValue" class="text-sm">100%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-xl font-semibold mb-4">Transform</h3>
+                    <div class="grid grid-cols-4 gap-2" id="transformButtons">
+                        <button class="tool-btn transform-btn" data-action="rotateLeft">
+                            <i class="fas fa-rotate-left"></i>
+                        </button>
+                        <button class="tool-btn transform-btn" data-action="rotateRight">
+                            <i class="fas fa-rotate-right"></i>
+                        </button>
+                        <button class="tool-btn transform-btn" data-action="flipHorizontal">
+                            <i class="fas fa-arrows-alt-h"></i>
+                        </button>
+                        <button class="tool-btn transform-btn" data-action="flipVertical">
+                            <i class="fas fa-arrows-alt-v"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="w-full md:w-2/3 relative">
+                <div class="preview-container h-96 flex items-center justify-center overflow-hidden">
+                    <img id="previewImage" src="image-placeholder.svg" 
+                         class="max-w-full max-h-full object-contain" alt="Preview">
+                    <div id="cropOverlay"></div>
+                </div>
+                
+                <div class="mt-4 flex justify-between">
+                    <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                    <button id="uploadBtn" class="tool-btn bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                        Upload Image
+                    </button>
+                    <button id="cropBtn" class="tool-btn bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                        Crop
+                    </button>
+                    <button id="resetBtn" class="tool-btn bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">
+                        Reset
+                    </button>
+                    <button id="saveBtn" class="tool-btn bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded">
+                        Save Image
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ImageEditor {
+            constructor() {
+                this.initElements();
+                this.initEventListeners();
+                this.resetState();
+            }
+
+            initElements() {
+                this.previewImage = document.getElementById('previewImage');
+                this.filterSlider = document.getElementById('filterSlider');
+                this.filterName = document.getElementById('filterName');
+                this.filterValue = document.getElementById('filterValue');
+                this.imageUpload = document.getElementById('imageUpload');
+                this.cropOverlay = document.getElementById('cropOverlay');
+
+                this.filterButtons = document.querySelectorAll('.filter-btn');
+                this.transformButtons = document.querySelectorAll('.transform-btn');
+
+                this.currentFilter = 'brightness';
+                this.filters = {
+                    brightness: { value: 100, max: 200 },
+                    saturation: { value: 100, max: 200 },
+                    inversion: { value: 0, max: 100 },
+                    grayscale: { value: 0, max: 100 },
+                    contrast: { value: 100, max: 200 },
+                    sepia: { value: 0, max: 100 }
+                };
+
+                this.transform = {
+                    rotate: 0,
+                    flipHorizontal: 1,
+                    flipVertical: 1
+                };
+
+                this.cropState = {
+                    isActive: false,
+                    startX: 0,
+                    startY: 0,
+                    endX: 0,
+                    endY: 0
+                };
+            }
+
+            initEventListeners() {
+                this.filterButtons.forEach(btn => {
+                    btn.addEventListener('click', () => this.selectFilter(btn.dataset.filter));
+                });
+
+                this.transformButtons.forEach(btn => {
+                    btn.addEventListener('click', () => this.transformImage(btn.dataset.action));
+                });
+
+                this.filterSlider.addEventListener('input', () => this.updateFilter());
+                document.getElementById('uploadBtn').addEventListener('click', () => this.imageUpload.click());
+                this.imageUpload.addEventListener('change', (e) => this.loadImage(e));
+                document.getElementById('resetBtn').addEventListener('click', () => this.resetState());
+                document.getElementById('saveBtn').addEventListener('click', () => this.saveImage());
+                document.getElementById('cropBtn').addEventListener('click', () => this.toggleCrop());
+
+                this.previewImage.addEventListener('mousedown', (e) => this.startCrop(e));
+                this.previewImage.addEventListener('mousemove', (e) => this.updateCrop(e));
+                this.previewImage.addEventListener('mouseup', () => this.finishCrop());
+                this.previewImage.addEventListener('mouseleave', () => this.finishCrop());
+            }
+
+            selectFilter(filter) {
+                this.currentFilter = filter;
+                this.filterButtons.forEach(btn => btn.classList.remove('active'));
+                document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+                
+                this.filterName.textContent = filter.charAt(0).toUpperCase() + filter.slice(1);
+                this.filterSlider.max = this.filters[filter].max;
+                this.filterSlider.value = this.filters[filter].value;
+                this.filterValue.textContent = `${this.filters[filter].value}%`;
+            }
+
+            updateFilter() {
+                this.filters[this.currentFilter].value = this.filterSlider.value;
+                this.filterValue.textContent = `${this.filterSlider.value}%`;
+                this.applyFilters();
+            }
+
+            applyFilters() {
+                const filterString = [
+                    `brightness(${this.filters.brightness.value}%)`,
+                    `saturate(${this.filters.saturation.value}%)`,
+                    `invert(${this.filters.inversion.value}%)`,
+                    `grayscale(${this.filters.grayscale.value}%)`,
+                    `contrast(${this.filters.contrast.value}%)`,
+                    `sepia(${this.filters.sepia.value}%)`
+                ].join(' ');
+
+                this.previewImage.style.filter = filterString;
+                this.previewImage.style.transform = `
+                    rotate(${this.transform.rotate}deg) 
+                    scaleX(${this.transform.flipHorizontal}) 
+                    scaleY(${this.transform.flipVertical})
+                `;
+            }
+
+            transformImage(action) {
+                switch(action) {
+                    case 'rotateLeft':
+                        this.transform.rotate -= 90;
+                        break;
+                    case 'rotateRight':
+                        this.transform.rotate += 90;
+                        break;
+                    case 'flipHorizontal':
+                        this.transform.flipHorizontal *= -1;
+                        break;
+                    case 'flipVertical':
+                        this.transform.flipVertical *= -1;
+                        break;
+                }
+                this.applyFilters();
+            }
+
+            loadImage(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    this.previewImage.src = event.target.result;
+                    this.resetState();
+                };
+                reader.readAsDataURL(file);
+            }
+
+            resetState() {
+                Object.keys(this.filters).forEach(filter => {
+                    this.filters[filter].value = filter === 'brightness' || filter === 'saturation' || filter === 'contrast' ? 100 : 0;
+                });
+
+                this.transform = {
+                    rotate: 0,
+                    flipHorizontal: 1,
+                    flipVertical: 1
+                };
+
+                this.selectFilter('brightness');
+                this.applyFilters();
+                this.cropState.isActive = false;
+                this.cropOverlay.style.display = 'none';
+            }
+
+            toggleCrop() {
+                this.cropState.isActive = !this.cropState.isActive;
+                this.cropOverlay.style.display = this.cropState.isActive ? 'block' : 'none';
+            }
+
+            startCrop(e) {
+                if (!this.cropState.isActive) return;
+                const rect = this.previewImage.getBoundingClientRect();
+                this.cropState.startX = e.clientX - rect.left;
+                this.cropState.startY = e.clientY - rect.top;
+            }
+
+            updateCrop(e) {
+                if (!this.cropState.isActive || !this.cropState.startX) return;
+                const rect = this.previewImage.getBoundingClientRect();
+                this.cropState.endX = e.clientX - rect.left;
+                this.cropState.endY = e.clientY - rect.top;
+
+                const width = Math.abs(this.cropState.endX - this.cropState.startX);
+                const height = Math.abs(this.cropState.endY - this.cropState.startY);
+                const left = Math.min(this.cropState.startX, this.cropState.endX);
+                const top = Math.min(this.cropState.startY, this.cropState.endY);
+
+                this.cropOverlay.style.left = `${left}px`;
+                this.cropOverlay.style.top = `${top}px`;
+                this.cropOverlay.style.width = `${width}px`;
+                this.cropOverlay.style.height = `${height}px`;
+            }
+
+            finishCrop() {
+                if (!this.cropState.isActive || !this.cropState.startX) return;
+                
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const width = Math.abs(this.cropState.endX - this.cropState.startX);
+                const height = Math.abs(this.cropState.endY - this.cropState.startY);
+                const left = Math.min(this.cropState.startX, this.cropState.endX);
+                const top = Math.min(this.cropState.startY, this.cropState.endY);
+
+                canvas.width = width;
+                canvas.height = height;
+                
+                ctx.drawImage(
+                    this.previewImage, 
+                    left, top, width, height, 
+                    0, 0, width, height
+                );
+
+                this.previewImage.src = canvas.toDataURL();
+                this.cropState = { isActive: false, startX: 0, startY: 0, endX: 0, endY: 0 };
+                this.cropOverlay.style.display = 'none';
+            }saveImage() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = this.previewImage.naturalWidth;
+    canvas.height = this.previewImage.naturalHeight;
+
+    ctx.filter = [
+        `brightness(${this.filters.brightness.value}%)`,
+        `saturate(${this.filters.saturation.value}%)`,
+        `invert(${this.filters.inversion.value}%)`,
+        `grayscale(${this.filters.grayscale.value}%)`,
+        `contrast(${this.filters.contrast.value}%)`,
+        `sepia(${this.filters.sepia.value}%)`
+    ].join(' ');
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(this.transform.rotate * Math.PI / 180);
+    ctx.scale(this.transform.flipHorizontal, this.transform.flipVertical);
+    
+    ctx.drawImage(
+        this.previewImage, 
+        -canvas.width / 2, 
+        -canvas.height / 2, 
+        canvas.width, 
+        canvas.height
+    );
+
+    const link = document.createElement('a');
+    link.download = 'edited-image.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+}
+
+//codebyRudranilGoswami
+document.addEventListener('DOMContentLoaded', () => {
+new ImageEditor();
+});
+</script>
+</body>
+</html>
+
+            
